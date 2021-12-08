@@ -1,4 +1,4 @@
-FROM node:16-alpine3.14 as js-builder
+FROM --platform=$BUILDPLATFORM node:16-alpine3.14 as js-builder
 
 ENV NODE_OPTIONS=--max_old_space_size=8000
 
@@ -20,14 +20,13 @@ COPY emails emails
 ENV NODE_ENV production
 RUN yarn build
 
-FROM golang:1.17.3-alpine3.14 as go-builder
+FROM --platform=$TARGETPLATFORM golang:1.17.3-alpine3.14 as go-builder
 
-RUN apk add --no-cache gcc g++ make
+RUN apk add --no-cache gcc g++ make bash
 
 WORKDIR /grafana
 
 COPY go.mod go.sum embed.go Makefile build.go package.json ./
-COPY ./local/* ./local/
 COPY cue cue
 COPY packages/grafana-schema packages/grafana-schema
 COPY public/app/plugins public/app/plugins
@@ -37,10 +36,19 @@ COPY cue.mod cue.mod
 COPY .bingo .bingo
 
 RUN go mod verify
-RUN make build-go
+
+ARG TARGETPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+
+# Switch shell to bash
+SHELL ["bash", "-c"]
+
+RUN make build-go GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${TARGETVARIANT/v/}
 
 # Final stage
-FROM alpine:3.14.3
+FROM --platform=$TARGETPLATFORM alpine:3.14.3
 
 LABEL maintainer="Grafana team <hello@grafana.com>"
 
